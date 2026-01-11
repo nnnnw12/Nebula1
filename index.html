@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Nebula | Realtime Chat</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#6366f1',
+                        secondary: '#8b5cf6',
+                        dark: '#0f172a',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-[#05050a] text-gray-200 overflow-hidden h-screen w-screen font-['Inter'] mood-aura">
+
+    <!-- Video Background Container -->
+    <div id="videoBgContainer" class="hidden">
+        <video id="videoBg" autoplay loop muted playsinline preload="auto" crossorigin="anonymous">
+            Your browser does not support video.
+        </video>
+        <div id="videoBgOverlay"></div>
+    </div>
+
+    <!-- Audio Elements -->
+    <audio id="ringtoneAudio" loop preload="auto">
+        <source src="https://cdn.discordapp.com/attachments/1456120812926140460/1459801769415807070/HUAWEI_.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="notificationAudio" preload="auto">
+        <source src="https://cdn.discordapp.com/attachments/1456120812926140460/1459801745491230964/89dc57675198e97a.mp3" type="audio/mpeg">
+    </audio>
+
+    <!-- Auth Screen -->
+    <div id="authScreen" class="absolute inset-0 z-[100] bg-black flex items-center justify-center">
+        <div class="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
+        <div class="absolute w-96 h-96 bg-primary/20 rounded-full blur-[128px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+
+        <div class="w-[90%] max-w-96 bg-slate-900/80 backdrop-blur-2xl border border-white/10 p-8 rounded-3xl shadow-2xl text-center relative z-10">
+            <div class="w-16 h-16 bg-gradient-to-tr from-primary to-secondary rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-lg shadow-primary/20">
+                <i data-lucide="zap" class="w-8 h-8 text-white fill-white"></i>
+            </div>
+            <h2 class="text-2xl font-bold mb-1 text-white">Nebula</h2>
+            <p class="text-sm text-gray-500 mb-8">Enter the void</p>
+            
+            <form id="loginForm" class="space-y-4">
+                <div class="group relative">
+                    <i data-lucide="user" class="absolute left-4 top-3.5 w-5 h-5 text-gray-500 group-focus-within:text-primary transition-colors"></i>
+                    <input type="text" id="regUsername" placeholder="Nickname" class="w-full bg-black/40 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all placeholder:text-gray-600" autocomplete="off" required>
+                </div>
+                
+                <div class="group relative">
+                    <i data-lucide="lock" class="absolute left-4 top-3.5 w-5 h-5 text-gray-500 group-focus-within:text-primary transition-colors"></i>
+                    <input type="password" id="regPassword" placeholder="Password" class="w-full bg-black/40 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none transition-all placeholder:text-gray-600" required>
+                </div>
+                
+                <div id="loginErrors" class="text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-xs font-medium text-left hidden"></div>
+
+                <button type="submit" class="w-full bg-primary hover:bg-secondary text-white py-3.5 rounded-xl font-semibold shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all active:scale-[0.98]">
+                    Connect
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Create Group Modal -->
+    <div id="createGroupModal" class="fixed inset-0 z-[130] bg-black/80 backdrop-blur-xl hidden items-center justify-center p-4">
+        <div class="w-full max-w-md bg-[#0f111a] border border-white/10 rounded-3xl p-6 shadow-2xl animate-fade-in">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold flex items-center gap-2">
+                    <i data-lucide="users" class="w-5 h-5 text-primary"></i> Create Group
+                </h2>
+                <button onclick="window.closeCreateGroup()" class="p-2 hover:bg-white/10 rounded-full transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <div class="space-y-4">
+                <div class="flex justify-center mb-4">
+                    <div class="w-24 h-24 rounded-full bg-white/5 border-2 border-dashed border-white/20 flex items-center justify-center cursor-pointer hover:border-primary transition-colors overflow-hidden animated-media" id="groupAvatarPreview">
+                        <i data-lucide="camera" class="w-8 h-8 text-gray-500"></i>
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="form-label">Group Avatar URL (image or video)</label>
+                    <input type="text" id="groupAvatarInput" placeholder="https://..." class="form-input" onchange="window.previewGroupAvatar()">
+                </div>
+                
+                <div>
+                    <label class="form-label">Group Name</label>
+                    <input type="text" id="groupNameInput" placeholder="My Awesome Group" class="form-input" maxlength="30">
+                </div>
+                
+                <div>
+                    <label class="form-label">Add Members</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="addMemberInput" placeholder="Search by @tag" class="form-input flex-1">
+                        <button onclick="window.searchMemberToAdd()" class="btn btn-primary px-4">
+                            <i data-lucide="search" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                    <div id="memberSearchResults" class="mt-2 space-y-1 max-h-32 overflow-y-auto"></div>
+                </div>
+                
+                <div id="selectedMembers" class="flex flex-wrap gap-2"></div>
+                
+                <button onclick="window.createGroup()" class="w-full btn btn-primary mt-4">
+                    Create Group
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Emoji/Sticker/GIF Picker Modal -->
+    <div id="pickerModal" class="fixed bottom-20 left-4 right-4 md:left-auto md:right-4 md:bottom-24 md:w-96 z-[80] bg-[#1a1d26] border border-white/10 rounded-2xl shadow-2xl hidden">
+        <div class="p-3 border-b border-white/10">
+            <div class="flex gap-2">
+                <button class="picker-tab active" data-tab="emoji" onclick="window.switchPickerTab('emoji')">😀 Emoji</button>
+                <button class="picker-tab" data-tab="stickers" onclick="window.switchPickerTab('stickers')">🎨 Stickers</button>
+                <button class="picker-tab" data-tab="gifs" onclick="window.switchPickerTab('gifs')">🎬 GIFs</button>
+            </div>
+        </div>
+        
+        <div id="emojiTab" class="p-3">
+            <input type="text" id="emojiSearch" placeholder="Search emoji..." class="form-input mb-3 text-sm py-2">
+            <div id="emojiGrid" class="emoji-picker custom-scrollbar"></div>
+        </div>
+        
+        <div id="stickersTab" class="p-3 hidden">
+            <div class="flex gap-2 mb-3">
+                <input type="text" id="customStickerUrl" placeholder="Add sticker URL..." class="form-input flex-1 text-sm py-2">
+                <button onclick="window.addCustomSticker()" class="btn btn-primary px-3 py-2 text-sm">Add</button>
+            </div>
+            <div id="stickerGrid" class="sticker-grid custom-scrollbar"></div>
+        </div>
+        
+        <div id="gifsTab" class="p-3 hidden">
+            <div class="flex gap-2 mb-3">
+                <input type="text" id="gifSearch" placeholder="Search GIFs..." class="form-input flex-1 text-sm py-2" onkeyup="if(event.key==='Enter')window.searchGifs()">
+                <button onclick="window.searchGifs()" class="btn btn-primary px-3 py-2 text-sm">
+                    <i data-lucide="search" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="flex gap-2 mb-3">
+                <input type="text" id="customGifUrl" placeholder="Or paste GIF URL..." class="form-input flex-1 text-sm py-2">
+                <button onclick="window.addCustomGif()" class="btn btn-secondary px-3 py-2 text-sm">Add</button>
+            </div>
+            <div id="gifGrid" class="sticker-grid custom-scrollbar"></div>
+        </div>
+    </div>
+
+    <!-- Incoming Call Modal -->
+    <div id="incomingCallModal" class="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl hidden flex-col items-center justify-center p-4">
+        <div class="absolute inset-0 bg-gradient-to-b from-green-500/10 to-transparent pointer-events-none"></div>
+        
+        <div class="text-center relative z-10">
+            <div class="relative w-32 h-32 mx-auto mb-8">
+                <div class="incoming-call-ring"></div>
+                <div class="incoming-call-ring"></div>
+                <div class="incoming-call-ring"></div>
+                <div id="incomingCallAvatarContainer" class="w-32 h-32 rounded-full overflow-hidden border-4 border-green-500 shadow-2xl relative z-10 animate-bounce-soft animated-media">
+                    <img id="incomingCallAvatar" src="" class="w-full h-full object-cover">
+                    <video id="incomingCallAvatarVideo" class="hidden" muted loop playsinline></video>
+                </div>
+            </div>
+            
+            <h2 id="incomingCallName" class="text-2xl font-bold text-white mb-2">Someone</h2>
+            <p class="text-green-400 text-sm mb-12 flex items-center justify-center gap-2">
+                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                Incoming call...
+            </p>
+            
+            <div class="flex items-center justify-center gap-8">
+                <button onclick="window.declineCall()" class="group flex flex-col items-center gap-2">
+                    <div class="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center transition-all shadow-lg shadow-red-500/30">
+                        <i data-lucide="phone-off" class="w-7 h-7 text-white"></i>
+                    </div>
+                    <span class="text-xs text-gray-400">Decline</span>
+                </button>
+                
+                <button onclick="window.acceptCall()" class="group flex flex-col items-center gap-2">
+                    <div class="w-20 h-20 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center transition-all shadow-lg shadow-green-500/30 animate-pulse">
+                        <i data-lucide="phone" class="w-8 h-8 text-white"></i>
+                    </div>
+                    <span class="text-xs text-gray-400">Accept</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Call Modal -->
+    <div id="callModal" class="fixed inset-0 z-[180] bg-black/90 backdrop-blur-md hidden flex-col items-center justify-center p-4">
+        <div class="relative w-full max-w-5xl h-[85vh] md:h-[600px] bg-gray-900 rounded-3xl overflow-hidden border border-white/10 shadow-2xl call-glow">
+            <video id="remoteVideo" class="w-full h-full object-cover bg-gradient-to-br from-gray-900 to-gray-800" autoplay playsinline></video>
+            <audio id="remoteAudio" autoplay playsinline style="display:none;"></audio>
+            
+            <div id="callAudioOnly" class="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+                <div class="text-center">
+                    <div class="relative w-32 h-32 mx-auto mb-6">
+                        <div id="callAvatarLargeContainer" class="w-32 h-32 rounded-full overflow-hidden border-4 border-primary shadow-2xl animated-media">
+                            <img id="callAvatarLarge" src="" class="w-full h-full object-cover">
+                            <video id="callAvatarLargeVideo" class="hidden" muted loop playsinline></video>
+                        </div>
+                        <div class="absolute inset-0 rounded-full border-4 border-primary animate-ping opacity-30"></div>
+                    </div>
+                    <div id="callStatusText" class="text-gray-400 text-sm">Connecting...</div>
+                </div>
+            </div>
+            
+            <div id="localVideoContainer" class="absolute bottom-6 right-6 w-32 h-48 md:w-48 md:h-32 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black">
+                <video id="localVideo" class="w-full h-full object-cover transform scale-x-[-1]" autoplay muted playsinline></video>
+                <div class="absolute bottom-2 left-2 bg-black/60 backdrop-blur px-2 py-0.5 rounded text-[10px] text-white">You</div>
+            </div>
+            
+            <div class="absolute top-6 left-6 flex items-center gap-4 bg-black/40 backdrop-blur-xl p-2 pr-6 rounded-full border border-white/10">
+                <div id="callAvatarContainer" class="w-10 h-10 rounded-full overflow-hidden border border-white/20 bg-gray-700 animated-media">
+                    <img id="callAvatar" src="" class="w-full h-full object-cover">
+                    <video id="callAvatarVideo" class="hidden" muted loop playsinline></video>
+                </div>
+                <div>
+                    <h3 id="callName" class="text-sm font-bold text-white">Calling...</h3>
+                    <div class="flex items-center gap-2">
+                        <div id="callStatusDot" class="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></div>
+                        <span id="callTimer" class="font-mono text-[10px] text-gray-300">00:00</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 md:gap-4 bg-black/50 backdrop-blur-2xl p-3 md:p-4 rounded-3xl border border-white/10 shadow-xl">
+                <button onclick="window.toggleMic()" id="micBtn" class="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all text-white">
+                    <i data-lucide="mic"></i>
+                </button>
+                <button onclick="window.toggleVideo()" id="videoBtn" class="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all text-white">
+                    <i data-lucide="video"></i>
+                </button>
+                <button onclick="window.toggleRemoteAudio()" id="speakerBtn" class="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all text-white">
+                    <i data-lucide="volume-2"></i>
+                </button>
+                <button onclick="window.startScreenShare()" id="shareBtn" class="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-primary hover:bg-secondary flex items-center justify-center transition-all text-white shadow-lg shadow-primary/20">
+                    <i data-lucide="monitor"></i>
+                </button>
+                <button onclick="window.endCall()" class="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-red-500 hover:bg-red-600 flex items-center justify-center transition-all text-white shadow-lg shadow-red-500/20">
+                    <i data-lucide="phone-off"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="fixed inset-0 z-[120] bg-black/60 backdrop-blur-xl hidden items-center justify-center p-4 overflow-y-auto">
+        <div class="w-full max-w-[500px] bg-[#0f111a] border border-white/10 rounded-3xl p-8 shadow-2xl relative overflow-hidden my-8">
+            <div class="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-[80px] -z-10"></div>
+
+            <div class="flex justify-between items-center mb-8">
+                <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="settings-2" class="w-5 h-5 text-primary"></i> Settings</h2>
+                <button onclick="window.closeSettings()" class="p-2 hover:bg-white/10 rounded-full transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            
+            <div class="space-y-6">
+                <!-- Audio Settings -->
+                <div>
+                    <h3 class="text-sm font-bold text-gray-400 uppercase mb-4 flex items-center gap-2">
+                        <i data-lucide="headphones" class="w-4 h-4"></i> Audio
+                    </h3>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="form-label">Input Device</label>
+                            <select id="micSelect" class="form-input"></select>
+                        </div>
+                        <div>
+                            <label class="form-label">Output Device</label>
+                            <select id="speakerSelect" class="form-input"></select>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Theme Settings -->
+                <div>
+                    <h3 class="text-sm font-bold text-gray-400 uppercase mb-4 flex items-center gap-2">
+                        <i data-lucide="palette" class="w-4 h-4"></i> Theme
+                    </h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="form-label">Chat Background Image URL</label>
+                            <input type="text" id="themeBgImage" placeholder="https://example.com/background.jpg" class="form-input">
+                            <p class="text-xs text-gray-500 mt-1">Use high resolution images (1920x1080+) for best quality</p>
+                        </div>
+                        
+                        <div>
+                            <label class="form-label">Background Video URL (mp4/webm)</label>
+                            <input type="text" id="themeBgVideo" placeholder="Paste direct .mp4 or .webm link" class="form-input">
+                            <p class="text-xs text-gray-500 mt-1">Video will play muted in background. Must be direct link to video file.</p>
+                            <p class="text-xs text-green-400 mt-1">✅ Works: Discord CDN, Imgur, direct .mp4/.webm files</p>
+                            <p class="text-xs text-red-400">❌ Won't work: YouTube, TikTok, Instagram links</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-3 gap-4">
+                            <div>
+                                <label class="form-label">Primary</label>
+                                <div class="color-picker-wrapper">
+                                    <input type="color" id="themePrimaryColor" value="#6366f1">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="form-label">Secondary</label>
+                                <div class="color-picker-wrapper">
+                                    <input type="color" id="themeSecondaryColor" value="#8b5cf6">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="form-label">Background</label>
+                                <div class="color-picker-wrapper">
+                                    <input type="color" id="themeBgColor" value="#05050a">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button onclick="window.applyTheme()" class="w-full btn btn-primary">Apply Theme</button>
+                        <button onclick="window.resetTheme()" class="w-full btn btn-secondary">Reset to Default</button>
+                    </div>
+                </div>
+                
+                <!-- Security & Encryption -->
+                <div>
+                    <h3 class="text-sm font-bold text-gray-400 uppercase mb-4 flex items-center gap-2">
+                        <i data-lucide="shield-check" class="w-4 h-4"></i> Security & Encryption
+                    </h3>
+                    <div id="securityStatus" class="security-card">
+                        <div class="security-item">
+                            <div class="security-icon success" id="e2eIcon">
+                                <i data-lucide="lock" class="w-5 h-5"></i>
+                            </div>
+                            <div class="security-info">
+                                <h4>End-to-End Encryption</h4>
+                                <p id="e2eStatus">AES-256-GCM encryption active</p>
+                            </div>
+                            <div class="encryption-status active" id="e2eBadge">
+                                <i data-lucide="check" class="w-3 h-3"></i> Active
+                            </div>
+                        </div>
+                        <div class="security-item">
+                            <div class="security-icon success" id="pbkdfIcon">
+                                <i data-lucide="key" class="w-5 h-5"></i>
+                            </div>
+                            <div class="security-info">
+                                <h4>PBKDF2 Key Derivation</h4>
+                                <p>100,000 iterations with SHA-256</p>
+                            </div>
+                        </div>
+                        <div class="security-item">
+                            <div class="security-icon success" id="totpIcon">
+                                <i data-lucide="smartphone" class="w-5 h-5"></i>
+                            </div>
+                            <div class="security-info">
+                                <h4>2FA Ready</h4>
+                                <p id="totpStatus">TOTP authenticator support</p>
+                            </div>
+                        </div>
+                        <div id="keyFingerprint" class="key-fingerprint hidden">
+                            Key: <span id="fingerprintValue">-</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Blocked Users -->
+                <div>
+                    <h3 class="text-sm font-bold text-gray-400 uppercase mb-4 flex items-center gap-2">
+                        <i data-lucide="shield-off" class="w-4 h-4"></i> Blocked Users
+                    </h3>
+                    <div id="blockedUsersList" class="space-y-2 max-h-32 overflow-y-auto custom-scrollbar">
+                        <p class="text-gray-500 text-sm">No blocked users</p>
+                    </div>
+                </div>
+                
+                <!-- Download App -->
+                <div>
+                    <h3 class="text-sm font-bold text-gray-400 uppercase mb-4 flex items-center gap-2">
+                        <i data-lucide="monitor" class="w-4 h-4"></i> Desktop App
+                    </h3>
+                    <!-- 
+                    ⚠️ ЗАМЕНИТЕ ССЫЛКУ НИЖЕ НА ВАШУ:
+                    - Google Drive: https://drive.google.com/uc?export=download&id=ВАШ_ID
+                    - Dropbox: https://www.dropbox.com/s/xxx/file.exe?dl=1
+                    - MediaFire: прямая ссылка
+                    - Discord: ссылка на вложение
+                    -->
+                    <a href="ВСТАВЬТЕ_ВАШУ_ССЫЛКУ_НА_EXE_СЮДА" 
+                       class="flex items-center gap-4 p-4 bg-gradient-to-r from-primary/20 to-secondary/20 border border-primary/30 rounded-2xl hover:from-primary/30 hover:to-secondary/30 transition-all group"
+                       download="Nebula-Setup.exe">
+                        <div class="w-12 h-12 bg-gradient-to-br from-primary to-secondary rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 group-hover:scale-110 transition-transform">
+                            <i data-lucide="download" class="w-6 h-6 text-white"></i>
+                        </div>
+                        <div class="flex-1">
+                            <div class="text-white font-bold">Download for Windows</div>
+                            <div class="text-gray-400 text-sm">x64 • Auto-updates • Native notifications</div>
+                        </div>
+                        <i data-lucide="external-link" class="w-5 h-5 text-gray-400 group-hover:text-primary transition-colors"></i>
+                    </a>
+                    <p class="text-xs text-gray-500 mt-2 text-center">macOS and Linux coming soon</p>
+                </div>
+                
+                <div class="pt-4">
+                    <button onclick="window.closeSettings()" class="w-full btn btn-secondary">Done</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contact Profile Modal -->
+    <div id="contactProfileModal" class="fixed inset-0 z-[130] bg-black/90 backdrop-blur-xl hidden items-center justify-center p-4">
+        <div class="w-full max-w-md bg-[#0a0c14] border border-white/10 rounded-3xl overflow-hidden shadow-2xl animate-fade-in">
+            <div class="relative h-48 md:h-56 bg-gradient-to-br from-primary/20 to-secondary/20 animated-media">
+                <img id="contactProfileBanner" src="" class="w-full h-full object-cover">
+                <video id="contactProfileBannerVideo" class="hidden" muted loop playsinline></video>
+                <div class="absolute inset-0 bg-gradient-to-t from-[#0a0c14] via-transparent to-transparent"></div>
+                <button onclick="window.closeContactProfile()" class="absolute top-4 right-4 bg-black/50 backdrop-blur-md p-2.5 rounded-full text-white hover:bg-white hover:text-black transition-all z-10">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <div class="px-6 relative -mt-14">
+                <div class="w-28 h-28 rounded-full border-4 border-[#0a0c14] overflow-hidden shadow-2xl bg-gray-800 ring-4 ring-primary/20 animated-media">
+                    <img id="contactProfileAvatar" src="" class="w-full h-full object-cover">
+                    <video id="contactProfileAvatarVideo" class="hidden" muted loop playsinline></video>
+                </div>
+            </div>
+            
+            <div class="px-6 py-5 space-y-5">
+                <div>
+                    <h2 id="contactProfileName" class="text-2xl font-bold text-white">User</h2>
+                    <p id="contactProfileTag" class="text-sm text-primary font-medium">@tag</p>
+                </div>
+                
+                <div id="contactProfileMusicSection" class="bg-white/5 border border-white/5 rounded-2xl p-4 hidden">
+                    <div class="flex items-center gap-4">
+                        <button id="contactProfilePlayBtn" class="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-secondary hover:scale-105 flex items-center justify-center transition-all text-white shrink-0 shadow-lg shadow-primary/30">
+                            <i data-lucide="play" class="w-5 h-5 ml-0.5"></i>
+                        </button>
+                        <div class="overflow-hidden flex-1">
+                            <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Profile Anthem</div>
+                            <div id="contactProfileMusicTitle" class="text-sm text-white font-medium truncate">Music Track</div>
+                        </div>
+                    </div>
+                    <audio id="contactProfileAudio" loop></audio>
+                </div>
+                
+                <div class="flex gap-3 pt-2">
+                    <button onclick="window.startChatWithContact()" class="flex-1 btn btn-primary">
+                        <i data-lucide="message-circle" class="w-4 h-4"></i> Message
+                    </button>
+                    <button onclick="window.callContactFromProfile()" class="flex-1 btn btn-secondary">
+                        <i data-lucide="phone" class="w-4 h-4"></i> Call
+                    </button>
+                </div>
+                
+                <div class="flex gap-2 pt-2 border-t border-white/5">
+                    <button onclick="window.blockUser()" id="blockUserBtn" class="flex-1 btn btn-danger">
+                        <i data-lucide="shield-off" class="w-4 h-4"></i> Block
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Group Options Modal -->
+    <div id="groupOptionsModal" class="fixed inset-0 z-[130] bg-black/90 backdrop-blur-xl hidden items-center justify-center p-4">
+        <div class="w-full max-w-md bg-[#0a0c14] border border-white/10 rounded-3xl overflow-hidden shadow-2xl animate-fade-in">
+            <div class="relative h-40 bg-gradient-to-br from-primary/20 to-secondary/20 animated-media">
+                <img id="groupOptionsAvatar" src="" class="w-full h-full object-cover">
+                <video id="groupOptionsAvatarVideo" class="hidden" muted loop playsinline></video>
+                <div class="absolute inset-0 bg-gradient-to-t from-[#0a0c14] via-transparent to-transparent"></div>
+                <button onclick="window.closeGroupOptions()" class="absolute top-4 right-4 bg-black/50 backdrop-blur-md p-2.5 rounded-full text-white hover:bg-white hover:text-black transition-all z-10">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <div class="px-6 py-5 space-y-4">
+                <div>
+                    <h2 id="groupOptionsName" class="text-xl font-bold text-white">Group Name</h2>
+                    <p id="groupOptionsMemberCount" class="text-sm text-gray-400">0 members</p>
+                </div>
+                
+                <div class="space-y-2">
+                    <button onclick="window.openInviteMembers()" class="w-full btn btn-primary">
+                        <i data-lucide="user-plus" class="w-4 h-4"></i> Invite Members
+                    </button>
+                    <button onclick="window.leaveGroup()" class="w-full btn btn-secondary">
+                        <i data-lucide="log-out" class="w-4 h-4"></i> Leave Group
+                    </button>
+                    <button onclick="window.deleteGroup()" id="deleteGroupBtn" class="w-full btn btn-danger hidden">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i> Delete Group
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Invite Members Modal -->
+    <div id="inviteMembersModal" class="fixed inset-0 z-[140] bg-black/80 backdrop-blur-xl hidden items-center justify-center p-4">
+        <div class="w-full max-w-md bg-[#0f111a] border border-white/10 rounded-3xl p-6 shadow-2xl animate-fade-in">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold flex items-center gap-2">
+                    <i data-lucide="user-plus" class="w-5 h-5 text-primary"></i> Invite to Group
+                </h2>
+                <button onclick="window.closeInviteMembers()" class="p-2 hover:bg-white/10 rounded-full transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="form-label">Search Users</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="inviteSearchInput" placeholder="Search by @tag or name" class="form-input flex-1" onkeyup="if(event.key==='Enter')window.searchUsersToInvite()">
+                        <button onclick="window.searchUsersToInvite()" class="btn btn-primary px-4">
+                            <i data-lucide="search" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="inviteSearchResults" class="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+                    <p class="text-gray-500 text-sm text-center py-4">Search for users to invite</p>
+                </div>
+                
+                <div id="pendingInvites" class="hidden">
+                    <label class="form-label">Selected Users</label>
+                    <div id="pendingInvitesList" class="flex flex-wrap gap-2"></div>
+                </div>
+                
+                <button onclick="window.sendInvites()" id="sendInvitesBtn" class="w-full btn btn-primary hidden">
+                    <i data-lucide="send" class="w-4 h-4"></i> Add to Group
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="contextMenu" class="fixed bg-[#1a1d26] border border-white/10 rounded-xl shadow-2xl py-1.5 w-48 hidden z-[150] overflow-hidden">
+        <button id="ctxEdit" class="w-full text-left px-4 py-2.5 hover:bg-primary/10 hover:text-primary flex items-center gap-3 text-sm transition-colors font-medium">
+            <i data-lucide="pencil" class="w-4 h-4"></i> Edit
+        </button>
+        <div class="h-px bg-white/5 my-1 mx-2"></div>
+        <button id="ctxDelete" class="w-full text-left px-4 py-2.5 hover:bg-red-500/10 flex items-center gap-3 text-sm text-red-400 hover:text-red-500 transition-colors font-medium">
+            <i data-lucide="trash-2" class="w-4 h-4"></i> Delete
+        </button>
+    </div>
+
+    <!-- Chat Context Menu -->
+    <div id="chatContextMenu" class="fixed bg-[#1a1d26] border border-white/10 rounded-xl shadow-2xl py-1.5 w-48 hidden z-[150] overflow-hidden">
+        <button id="ctxDeleteChat" class="w-full text-left px-4 py-2.5 hover:bg-red-500/10 flex items-center gap-3 text-sm text-red-400 hover:text-red-500 transition-colors font-medium">
+            <i data-lucide="trash-2" class="w-4 h-4"></i> Delete Chat
+        </button>
+    </div>
+
+    <!-- Main Container - FULLSCREEN -->
+    <div class="relative z-10 w-full h-full bg-[#0a0a0f]/90 backdrop-blur-3xl flex overflow-hidden messenger-fullscreen">
+        
+        <!-- Side Navigation -->
+        <nav class="w-16 md:w-20 hidden md:flex flex-col items-center py-6 border-r border-white/5 bg-black/20">
+            <div class="mb-8 p-2.5 bg-gradient-to-br from-primary to-secondary rounded-xl shadow-lg shadow-primary/20 cursor-pointer hover:scale-105 transition-transform">
+                <i data-lucide="zap" class="w-6 h-6 text-white fill-white"></i>
+            </div>
+            
+            <div class="flex flex-col gap-4 w-full items-center">
+                <button class="nav-btn active" onclick="window.switchView('chats')" title="Chats">
+                    <i data-lucide="message-square" class="w-6 h-6"></i>
+                </button>
+                <button class="nav-btn" onclick="window.switchView('search')" title="Search Users">
+                    <i data-lucide="search" class="w-6 h-6"></i>
+                </button>
+                <button class="nav-btn" onclick="window.openCreateGroup()" title="Create Group">
+                    <i data-lucide="users-round" class="w-6 h-6"></i>
+                </button>
+                <button class="nav-btn" onclick="window.openSettings()" title="Settings">
+                    <i data-lucide="sliders" class="w-6 h-6"></i>
+                </button>
+            </div>
+            
+            <div class="mt-auto flex flex-col items-center gap-5">
+                <button class="nav-btn" id="notifBtn">
+                    <i data-lucide="bell" class="w-6 h-6"></i>
+                </button>
+                
+                <button class="p-0.5 rounded-full border border-white/10 hover:border-primary transition-colors overflow-hidden w-10 h-10 shadow-lg animated-media" onclick="window.toggleProfile()" id="navAvatarBtn">
+                    <img id="navMyAvatar" src="https://via.placeholder.com/150" class="w-full h-full object-cover rounded-full">
+                    <video id="navMyAvatarVideo" class="hidden rounded-full" muted loop playsinline></video>
+                </button>
+            </div>
+        </nav>
+
+        <!-- Sidebar - Chats List -->
+        <aside class="w-full md:w-80 border-r border-white/5 bg-black/20 flex flex-col relative z-20">
+            <div class="p-4 border-b border-white/5 bg-white/[0.02]">
+                <h2 class="text-lg font-bold mb-4 tracking-tight">Messages</h2>
+                
+                <!-- Chat Tabs -->
+                <div class="chat-tabs">
+                    <button class="chat-tab active" id="tabPersonal" onclick="window.switchChatTab('personal')">
+                        <i data-lucide="user" class="w-4 h-4 inline-block mr-1"></i>
+                        Personal
+                        <span class="tab-count" id="personalCount">0</span>
+                    </button>
+                    <button class="chat-tab" id="tabGroups" onclick="window.switchChatTab('groups')">
+                        <i data-lucide="users" class="w-4 h-4 inline-block mr-1"></i>
+                        Groups
+                        <span class="tab-count" id="groupsCount">0</span>
+                    </button>
+                </div>
+                
+                <div class="relative group mt-3">
+                    <i data-lucide="search" class="absolute left-3 top-2.5 w-4 h-4 text-gray-500 group-focus-within:text-primary transition-colors"></i>
+                    <input type="text" id="contactSearch" placeholder="Filter chats..." class="w-full bg-[#05050a] border border-white/10 rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-primary/50 transition-colors placeholder:text-gray-600" oninput="window.filterChats()">
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1">
+                <div id="personalChatsList" class="space-y-1 active"></div>
+                <div id="groupChatsList" class="space-y-1"></div>
+            </div>
+            
+            <!-- Global Search View -->
+            <div id="globalSearchView" class="absolute inset-0 bg-[#0f111a] z-30 hidden flex flex-col">
+                <div class="p-4 border-b border-white/10 flex items-center gap-3 bg-white/[0.02]">
+                    <button onclick="window.switchView('chats')" class="hover:bg-white/10 p-2 rounded-lg transition-colors"><i data-lucide="arrow-left" class="w-5 h-5 text-gray-400"></i></button>
+                    <h3 class="font-bold">Global Search</h3>
+                </div>
+                <div class="p-4">
+                    <div class="flex gap-2">
+                        <input type="text" id="globalSearchInput" placeholder="Find user by @tag" class="form-input flex-1">
+                        <button onclick="window.performGlobalSearch()" class="btn btn-primary">Find</button>
+                    </div>
+                </div>
+                <div id="searchResults" class="p-4 space-y-2 overflow-y-auto custom-scrollbar flex-1"></div>
+            </div>
+            
+            <!-- Mobile Bottom Nav -->
+            <div class="md:hidden flex items-center justify-around p-2 border-t border-white/5 bg-black/30">
+                <button class="nav-btn text-primary" onclick="window.switchView('chats')">
+                    <i data-lucide="message-square" class="w-6 h-6"></i>
+                </button>
+                <button class="nav-btn text-gray-400" onclick="window.switchView('search')">
+                    <i data-lucide="search" class="w-6 h-6"></i>
+                </button>
+                <button class="nav-btn text-gray-400" onclick="window.openCreateGroup()">
+                    <i data-lucide="users-round" class="w-6 h-6"></i>
+                </button>
+                <button class="nav-btn text-gray-400" onclick="window.openSettings()">
+                    <i data-lucide="sliders" class="w-6 h-6"></i>
+                </button>
+                <button class="nav-btn text-gray-400 animated-media overflow-hidden" onclick="window.toggleProfile()">
+                    <img id="navMyAvatarMobile" src="https://via.placeholder.com/150" class="w-8 h-8 rounded-full object-cover">
+                    <video id="navMyAvatarMobileVideo" class="hidden w-8 h-8 rounded-full" muted loop playsinline></video>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="flex-1 flex flex-col relative bg-[#0a0a0f]">
+            <header class="h-16 border-b border-white/5 flex items-center justify-between px-4 md:px-6 backdrop-blur-md bg-white/[0.01]">
+                <div class="flex items-center gap-3">
+                    <button class="md:hidden p-2 -ml-2 text-gray-400 hover:text-white" onclick="window.closeChatMobile()">
+                        <i data-lucide="arrow-left" class="w-5 h-5"></i>
+                    </button>
+                    
+                    <div class="flex items-center gap-3" id="chatHeaderInfo">
+                        <div class="w-10 h-10 rounded-full bg-white/5 border border-white/5 flex items-center justify-center">
+                            <i data-lucide="message-circle" class="w-5 h-5 text-gray-600"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-sm text-gray-400">Select Chat</h3>
+                            <p class="text-xs text-gray-600">Start a conversation</p>
+                        </div>
+                    </div>
+                    <div id="chatEncryptionBadge" class="encryption-status hidden" title="End-to-End Encrypted">
+                        <i data-lucide="shield-check" class="w-3 h-3"></i>
+                        <span>Encrypted</span>
+                    </div>
+                </div>
+                <div class="flex gap-1 text-gray-400">
+                    <button id="toggleMembersBtn" class="p-2 hover:bg-white/5 rounded-lg hover:text-primary transition-all hidden" onclick="window.toggleMembersPanel()" title="Members">
+                        <i data-lucide="users" class="w-5 h-5"></i>
+                    </button>
+                    <button class="p-2 hover:bg-white/5 rounded-lg hover:text-green-500 transition-all" onclick="window.startCall()" title="Voice Call">
+                        <i data-lucide="phone" class="w-5 h-5"></i>
+                    </button>
+                    <button class="p-2 hover:bg-white/5 rounded-lg hover:text-primary transition-all" onclick="window.startVideoCall()" title="Video Call">
+                        <i data-lucide="video" class="w-5 h-5"></i>
+                    </button>
+                    <button class="p-2 hover:bg-white/5 rounded-lg hover:text-red-500 transition-all" onclick="window.openChatOptions()" title="Options">
+                        <i data-lucide="more-vertical" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </header>
+
+            <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 custom-scrollbar scroll-smooth"></div>
+
+            <div class="p-3 md:p-5 border-t border-white/5 bg-[#0f111a] msg-input-area">
+                <div class="flex items-end gap-2 bg-[#05050a] border border-white/10 rounded-2xl p-1.5 focus-within:border-white/20 transition-colors shadow-lg">
+                    <input type="file" id="mediaUpload" class="hidden" accept="image/*" onchange="window.handleMediaUpload(event)">
+                    <button onclick="document.getElementById('mediaUpload').click()" class="p-2.5 md:p-3 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition-all" title="Send Image">
+                        <i data-lucide="image" class="w-5 h-5"></i>
+                    </button>
+                    
+                    <button onclick="window.togglePicker()" class="p-2.5 md:p-3 text-gray-400 hover:text-yellow-400 hover:bg-white/5 rounded-xl transition-all" title="Emoji & Stickers">
+                        <i data-lucide="smile" class="w-5 h-5"></i>
+                    </button>
+                    
+                    <textarea id="msgInput" rows="1" placeholder="Type a message..." class="flex-1 bg-transparent border-none outline-none text-sm text-gray-200 py-3 px-2 resize-none custom-scrollbar max-h-32 placeholder:text-gray-600"></textarea>
+                    
+                    <div class="flex items-center gap-0.5">
+                        <button id="recordVideoBtn" class="p-2.5 md:p-3 text-gray-400 hover:text-primary hover:bg-white/5 rounded-xl transition-all" title="Record Video Message">
+                            <i data-lucide="aperture" class="w-5 h-5"></i>
+                        </button>
+                        <button id="recordVoiceBtn" class="p-2.5 md:p-3 text-gray-400 hover:text-red-500 hover:bg-white/5 rounded-xl transition-all" title="Record Voice">
+                            <i data-lucide="mic" class="w-5 h-5"></i>
+                        </button>
+                        <button onclick="window.sendMessage()" class="bg-primary hover:bg-secondary text-white p-2.5 md:p-3 rounded-xl transition-all shadow-lg shadow-primary/20 m-1">
+                            <i data-lucide="send" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Group Members Panel -->
+        <aside id="membersPanel" class="w-64 border-l border-white/5 bg-[#0a0a0f] hidden flex-col members-panel">
+            <div class="p-4 border-b border-white/5 flex items-center justify-between">
+                <h3 class="font-bold text-sm">Members</h3>
+                <button onclick="window.toggleMembersPanel()" class="p-1.5 hover:bg-white/10 rounded-lg transition-colors md:hidden">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div id="membersList" class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1"></div>
+        </aside>
+
+        <!-- Profile Panel -->
+        <aside id="profilePanel" class="absolute right-0 top-0 h-full w-full md:w-[380px] bg-[#0f111a] border-l border-white/10 z-[60] translate-x-full transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] flex flex-col shadow-2xl">
+            <div class="relative h-52 md:h-56 bg-gray-800 group animated-media">
+                <img id="profileBannerImg" src="" class="w-full h-full object-cover opacity-70 group-hover:opacity-90 transition-opacity">
+                <video id="profileBannerVideo" class="hidden" muted loop playsinline></video>
+                <div class="absolute inset-0 bg-gradient-to-t from-[#0f111a] via-transparent to-transparent"></div>
+                <button onclick="window.toggleProfile()" class="absolute top-4 right-4 bg-black/40 backdrop-blur-md p-2 rounded-full text-white hover:bg-white hover:text-black transition-all">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <div class="px-8 relative -mt-12 flex justify-between items-end mb-6">
+                <div id="avatarContainer" class="w-24 h-24 rounded-full border-[4px] border-[#0f111a] overflow-hidden shadow-2xl bg-gray-800 relative z-10 group cursor-pointer animated-media">
+                    <img id="profileAvatarImg" src="" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
+                    <video id="profileAvatarVideo" class="hidden" muted loop playsinline></video>
+                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 transition-opacity" id="vinylCenter">
+                        <div class="w-3 h-3 bg-white rounded-full shadow-[0_0_10px_rgba(0,0,0,0.5)] border border-gray-400"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="px-8 flex-1 overflow-y-auto space-y-8 pb-8 custom-scrollbar">
+                <div>
+                    <h2 class="text-2xl font-bold text-white tracking-tight" id="profileNameDisplay">User</h2>
+                    <p class="text-sm text-primary font-medium" id="profileTagDisplay">@tag</p>
+                </div>
+                
+                <div class="bg-white/5 border border-white/5 rounded-2xl p-4 flex items-center gap-4">
+                    <button id="playMusicBtn" class="w-10 h-10 rounded-full bg-primary hover:bg-secondary flex items-center justify-center transition-colors text-white shrink-0 shadow-lg shadow-primary/20">
+                        <i data-lucide="play" class="w-4 h-4 ml-0.5"></i>
+                    </button>
+                    <div class="overflow-hidden">
+                        <div class="text-xs text-gray-400 uppercase font-bold mb-0.5">Profile Anthem</div>
+                        <div class="text-sm text-white truncate w-40" id="profileMusicTitle">Music Track</div>
+                    </div>
+                    <audio id="profileAudio" loop></audio>
+                </div>
+
+                <div class="space-y-5">
+                    <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest border-b border-white/5 pb-2">Edit Profile</h3>
+                    
+                    <div class="space-y-3">
+                        <div>
+                            <label class="form-label">Avatar URL (image or video)</label>
+                            <input type="text" id="inputAvatar" placeholder="https://... .jpg/.mp4" class="form-input">
+                        </div>
+                        <div>
+                            <label class="form-label">Banner URL (image or video)</label>
+                            <input type="text" id="inputBanner" placeholder="https://... .jpg/.mp4" class="form-input">
+                        </div>
+                        <div>
+                            <label class="form-label">Music (MP3 URL)</label>
+                            <input type="text" id="inputMusic" class="form-input">
+                        </div>
+                    </div>
+
+                    <button onclick="window.saveProfile()" class="w-full btn btn-primary">Save Changes</button>
+                </div>
+                
+                <div class="pt-4 border-t border-white/5">
+                    <button onclick="window.logout()" class="w-full flex items-center justify-center gap-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 py-3 rounded-xl transition-colors text-sm font-medium">
+                        <i data-lucide="log-out" class="w-4 h-4"></i> Sign Out
+                    </button>
+                </div>
+            </div>
+        </aside>
+    </div>
+    
+    <!-- Download App Button - Hidden, moved to settings -->
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 bg-gray-900 border border-white/10 px-4 py-3 rounded-xl shadow-2xl z-[300] hidden transform transition-all duration-300 opacity-0 translate-y-4">
+        <div class="flex items-center gap-3">
+            <div id="toastIcon" class="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
+                <i data-lucide="shield-check" class="w-4 h-4 text-green-500"></i>
+            </div>
+            <div>
+                <div id="toastTitle" class="text-sm font-semibold text-white">Encryption Active</div>
+                <div id="toastMessage" class="text-xs text-gray-400">Messages are end-to-end encrypted</div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+    
+    <!-- Electron Desktop Integration -->
+    <script>
+        // Check if running in Electron
+        if (window.electronAPI) {
+            console.log('🖥️ Running in Electron Desktop App');
+            
+            // Get and display version
+            window.electronAPI.getVersion().then(version => {
+                console.log('App version:', version);
+                // Add version to settings if needed
+                const versionEl = document.createElement('div');
+                versionEl.className = 'text-xs text-gray-500 text-center mt-4';
+                versionEl.textContent = 'Desktop v' + version;
+                const settingsContent = document.querySelector('#settingsModal .space-y-6');
+                if (settingsContent) {
+                    settingsContent.appendChild(versionEl);
+                }
+            });
+            
+            // Listen for update status
+            window.electronAPI.onUpdateStatus((data) => {
+                console.log('Update status:', data);
+                
+                switch(data.status) {
+                    case 'checking':
+                        showToast('Checking for Updates', 'Looking for new version...', 'info');
+                        break;
+                    case 'available':
+                        showToast('Update Available', `Version ${data.version} is downloading`, 'success');
+                        break;
+                    case 'downloading':
+                        // Could show progress bar
+                        break;
+                    case 'downloaded':
+                        showToast('Update Ready', `Click to install v${data.version}`, 'success');
+                        // Add click handler to install
+                        document.getElementById('toast').onclick = () => {
+                            window.electronAPI.quitAndInstall();
+                        };
+                        break;
+                    case 'error':
+                        console.error('Update error:', data.error);
+                        break;
+                }
+            });
+            
+            // Override notification for desktop
+            const originalPlayNotification = window.playNotificationSound;
+            if (typeof playNotificationSound === 'function') {
+                window.playNotificationSound = function() {
+                    if (originalPlayNotification) originalPlayNotification();
+                    window.electronAPI.flashFrame();
+                };
+            }
+            
+            // In desktop app, we don't need download button (it's in settings now)
+        }
+    </script>
+</body>
+</html>
