@@ -208,9 +208,25 @@
     <!-- Active Call Modal -->
     <div id="callModal" class="fixed inset-0 z-[180] bg-black/90 backdrop-blur-md hidden flex-col items-center justify-center p-4">
         <div class="relative w-full max-w-5xl h-[85vh] md:h-[600px] bg-gray-900 rounded-3xl overflow-hidden border border-white/10 shadow-2xl call-glow">
+            <!-- Main Video (Remote or Screen Share) -->
             <video id="remoteVideo" class="w-full h-full object-cover bg-gradient-to-br from-gray-900 to-gray-800" autoplay playsinline></video>
             <audio id="remoteAudio" autoplay playsinline style="display:none;"></audio>
             
+            <!-- Screen Share Display (fullscreen overlay) -->
+            <div id="screenShareDisplay" class="absolute inset-0 bg-black hidden cursor-pointer z-10" onclick="window.toggleScreenShareSize()">
+                <video id="screenShareVideo" class="w-full h-full object-contain" autoplay playsinline></video>
+                <div id="screenShareLabel" class="absolute top-4 left-1/2 -translate-x-1/2 bg-green-500/90 backdrop-blur px-4 py-2 rounded-full text-white text-sm font-medium flex items-center gap-2">
+                    <div class="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                    <span>Screen Share - Click to minimize</span>
+                </div>
+                <!-- Minimized remote video during screen share -->
+                <div id="remoteVideoMini" class="absolute bottom-24 left-6 w-48 h-36 rounded-2xl overflow-hidden border-2 border-white/30 shadow-2xl bg-black hidden">
+                    <video id="remoteVideoSmall" class="w-full h-full object-cover" autoplay playsinline muted></video>
+                    <div class="absolute bottom-2 left-2 bg-black/60 backdrop-blur px-2 py-0.5 rounded text-[10px] text-white">Remote</div>
+                </div>
+            </div>
+            
+            <!-- Audio Only Placeholder -->
             <div id="callAudioOnly" class="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
                 <div class="text-center">
                     <div class="relative w-32 h-32 mx-auto mb-6">
@@ -224,12 +240,14 @@
                 </div>
             </div>
             
-            <div id="localVideoContainer" class="absolute bottom-6 right-6 w-32 h-48 md:w-48 md:h-32 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black">
+            <!-- Local Video Preview -->
+            <div id="localVideoContainer" class="absolute bottom-6 right-6 w-32 h-48 md:w-48 md:h-32 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black z-20">
                 <video id="localVideo" class="w-full h-full object-cover transform scale-x-[-1]" autoplay muted playsinline></video>
                 <div class="absolute bottom-2 left-2 bg-black/60 backdrop-blur px-2 py-0.5 rounded text-[10px] text-white">You</div>
             </div>
             
-            <div class="absolute top-6 left-6 flex items-center gap-4 bg-black/40 backdrop-blur-xl p-2 pr-6 rounded-full border border-white/10">
+            <!-- Call Info Header -->
+            <div class="absolute top-6 left-6 flex items-center gap-4 bg-black/40 backdrop-blur-xl p-2 pr-6 rounded-full border border-white/10 z-20">
                 <div id="callAvatarContainer" class="w-10 h-10 rounded-full overflow-hidden border border-white/20 bg-gray-700 animated-media">
                     <img id="callAvatar" src="" class="w-full h-full object-cover">
                     <video id="callAvatarVideo" class="hidden" muted loop playsinline></video>
@@ -242,8 +260,17 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Screen Share Active Indicator -->
+            <div id="screenShareIndicator" class="absolute top-6 right-6 bg-green-500/20 backdrop-blur-xl px-4 py-2 rounded-full border border-green-500/30 hidden z-20">
+                <div class="flex items-center gap-2">
+                    <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span class="text-xs text-green-400 font-medium">Sharing Screen</span>
+                </div>
+            </div>
 
-            <div class="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 md:gap-4 bg-black/50 backdrop-blur-2xl p-3 md:p-4 rounded-3xl border border-white/10 shadow-xl">
+            <!-- Call Controls -->
+            <div class="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 md:gap-4 bg-black/50 backdrop-blur-2xl p-3 md:p-4 rounded-3xl border border-white/10 shadow-xl z-30">
                 <button onclick="window.toggleMic()" id="micBtn" class="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all text-white">
                     <i data-lucide="mic"></i>
                 </button>
@@ -401,7 +428,7 @@
                     - MediaFire: прямая ссылка
                     - Discord: ссылка на вложение
                     -->
-                    <a href="https://drive.google.com/file/d/1criDfDkU8CGHjBidr0SqR2NuvtZNL6AC" 
+                    <a href="ВСТАВЬТЕ_ВАШУ_ССЫЛКУ_НА_EXE_СЮДА" 
                        class="flex items-center gap-4 p-4 bg-gradient-to-r from-primary/20 to-secondary/20 border border-primary/30 rounded-2xl hover:from-primary/30 hover:to-secondary/30 transition-all group"
                        download="Nebula-Setup.exe">
                         <div class="w-12 h-12 bg-gradient-to-br from-primary to-secondary rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 group-hover:scale-110 transition-transform">
