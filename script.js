@@ -382,6 +382,8 @@ let incomingCallData = null;
 let callListener = null;
 let screenStream = null;
 let originalVideoTrack = null;
+let isScreenSharing = false;
+let screenShareMinimized = false;
 
 // Audio elements
 let ringtoneAudio, notificationAudio;
@@ -1853,18 +1855,46 @@ window.acceptCall = async function() {
         document.getElementById('localVideo').muted = true;
         peerConnection = new RTCPeerConnection(iceServers);
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        
+        // Обработка входящих треков (включая screen share)
         peerConnection.ontrack = (event) => {
-            remoteStream = event.streams[0];
-            document.getElementById('remoteVideo').srcObject = remoteStream;
-            document.getElementById('remoteAudio').srcObject = remoteStream;
-            document.getElementById('remoteAudio').play().catch(e => {});
-            document.getElementById('remoteVideo').play().catch(e => {});
+            console.log('📥 [Receiver] Got track:', event.track.kind, event.track.label);
+            
+            if (!remoteStream) {
+                remoteStream = new MediaStream();
+            }
+            
+            // Удаляем старый трек того же типа
+            const existingTrack = remoteStream.getTracks().find(t => t.kind === event.track.kind);
+            if (existingTrack) {
+                remoteStream.removeTrack(existingTrack);
+                console.log('🔄 Replaced old', event.track.kind, 'track');
+            }
+            
+            remoteStream.addTrack(event.track);
+            
+            const remoteVideo = document.getElementById('remoteVideo');
+            const remoteAudio = document.getElementById('remoteAudio');
+            
+            remoteVideo.srcObject = remoteStream;
+            if (remoteAudio) {
+                remoteAudio.srcObject = remoteStream;
+                remoteAudio.play().catch(e => {});
+            }
+            remoteVideo.play().catch(e => {});
+            
+            if (event.track.kind === 'video') {
+                console.log('📺 [Receiver] Video track - hiding placeholder');
+                document.getElementById('callAudioOnly').style.display = 'none';
+            }
+            
             document.getElementById('callStatusDot').className = 'w-1.5 h-1.5 bg-green-500 rounded-full';
             document.getElementById('callStatusText').textContent = 'Connected';
-            document.getElementById('callAudioOnly').style.display = 'none';
             startCallTimer();
         };
+        
         peerConnection.onicecandidate = (event) => { if(event.candidate) db.ref('calls/' + incomingCallData.callerId + '/answerCandidates').push(event.candidate.toJSON()); };
+        
         const offerRef = await db.ref('calls/' + incomingCallData.callerId + '/offer').once('value');
         const offer = offerRef.val();
         if(offer) {
@@ -1873,8 +1903,31 @@ window.acceptCall = async function() {
             await peerConnection.setLocalDescription(answer);
             await db.ref('calls/' + currentUser.id).update({ status: 'answered', answer: { type: answer.type, sdp: answer.sdp } });
         }
+        
         db.ref('calls/' + incomingCallData.callerId + '/offerCandidates').on('child_added', (snapshot) => { peerConnection.addIceCandidate(new RTCIceCandidate(snapshot.val())).catch(e => {}); });
         db.ref('calls/' + currentUser.id + '/status').on('value', (snapshot) => { if(snapshot.val() === 'ended') window.endCall(); });
+        
+        // КРИТИЧНО: Слушаем обновления offer для screen share (renegotiation)
+        db.ref('calls/' + incomingCallData.callerId + '/offer').on('value', async (snapshot) => {
+            const newOffer = snapshot.val();
+            if (newOffer && peerConnection && peerConnection.currentRemoteDescription) {
+                // Это обновлённый offer (renegotiation для screen share)
+                console.log('🔄 [Receiver] Got renegotiation offer');
+                try {
+                    await peerConnection.setRemoteDescription(new RTCSessionDescription(newOffer));
+                    const newAnswer = await peerConnection.createAnswer();
+                    await peerConnection.setLocalDescription(newAnswer);
+                    await db.ref('calls/' + currentUser.id + '/answer').set({
+                        type: newAnswer.type,
+                        sdp: newAnswer.sdp
+                    });
+                    console.log('✅ [Receiver] Renegotiation answer sent');
+                } catch(e) {
+                    console.log('Renegotiation error:', e.message);
+                }
+            }
+        });
+        
     } catch(err) { alert('Could not accept call: ' + err.message); window.endCall(); }
 };
 
@@ -1893,23 +1946,67 @@ async function initiateCall(withVideo) {
         document.getElementById('localVideo').muted = true;
         peerConnection = new RTCPeerConnection(iceServers);
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        
+        // Обработка входящих треков
         peerConnection.ontrack = (event) => {
-            remoteStream = event.streams[0];
-            document.getElementById('remoteVideo').srcObject = remoteStream;
-            document.getElementById('remoteAudio').srcObject = remoteStream;
-            document.getElementById('remoteAudio').play().catch(e => {});
-            document.getElementById('remoteVideo').play().catch(e => {});
+            console.log('📥 [Caller] Got track:', event.track.kind, event.track.label);
+            
+            if (!remoteStream) {
+                remoteStream = new MediaStream();
+            }
+            
+            const existingTrack = remoteStream.getTracks().find(t => t.kind === event.track.kind);
+            if (existingTrack) {
+                remoteStream.removeTrack(existingTrack);
+            }
+            
+            remoteStream.addTrack(event.track);
+            
+            const remoteVideo = document.getElementById('remoteVideo');
+            const remoteAudio = document.getElementById('remoteAudio');
+            
+            remoteVideo.srcObject = remoteStream;
+            if (remoteAudio) {
+                remoteAudio.srcObject = remoteStream;
+                remoteAudio.play().catch(e => {});
+            }
+            remoteVideo.play().catch(e => {});
+            
+            if (event.track.kind === 'video') {
+                document.getElementById('callAudioOnly').style.display = 'none';
+            }
+            
             document.getElementById('callStatusDot').className = 'w-1.5 h-1.5 bg-green-500 rounded-full';
             document.getElementById('callStatusText').textContent = 'Connected';
-            document.getElementById('callAudioOnly').style.display = 'none';
             startCallTimer();
         };
+        
         peerConnection.onicecandidate = (event) => { if(event.candidate) db.ref('calls/' + currentUser.id + '/offerCandidates').push(event.candidate.toJSON()); };
+        
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
         await db.ref('calls/' + currentUser.id).set({ callerId: currentUser.id, receiverId: activeChatId, status: 'ringing', isVideo: withVideo, offer: { type: offer.type, sdp: offer.sdp }, timestamp: firebase.database.ServerValue.TIMESTAMP });
         await db.ref('calls/' + activeChatId).set({ callerId: currentUser.id, receiverId: activeChatId, status: 'ringing', isVideo: withVideo, timestamp: firebase.database.ServerValue.TIMESTAMP });
-        db.ref('calls/' + activeChatId + '/answer').on('value', async (snapshot) => { const answer = snapshot.val(); if(answer && peerConnection && !peerConnection.currentRemoteDescription) await peerConnection.setRemoteDescription(new RTCSessionDescription(answer)); });
+        
+        // Слушаем answer и обновления (для renegotiation)
+        db.ref('calls/' + activeChatId + '/answer').on('value', async (snapshot) => { 
+            const answer = snapshot.val(); 
+            if(answer && peerConnection) {
+                try {
+                    if (peerConnection.signalingState === 'have-local-offer') {
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+                        console.log('✅ [Caller] Set remote description');
+                    } else if (peerConnection.signalingState === 'stable' && answer.sdp !== peerConnection.currentRemoteDescription?.sdp) {
+                        // Это ответ на renegotiation
+                        console.log('🔄 [Caller] Got renegotiation answer');
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+                    }
+                } catch(e) {
+                    console.log('Answer error:', e.message);
+                }
+            }
+        });
+        
         db.ref('calls/' + activeChatId + '/answerCandidates').on('child_added', (snapshot) => { if(peerConnection) peerConnection.addIceCandidate(new RTCIceCandidate(snapshot.val())).catch(e => {}); });
         db.ref('calls/' + activeChatId + '/status').on('value', (snapshot) => { const status = snapshot.val(); if(status === 'declined' || status === 'ended') window.endCall(); });
     } catch(err) { alert('Could not start call: ' + err.message); window.endCall(); }
@@ -1940,23 +2037,233 @@ window.toggleMic = function() { if(!localStream) return; isMicMuted = !isMicMute
 window.toggleVideo = function() { if(!localStream) return; const videoTracks = localStream.getVideoTracks(); if(videoTracks.length === 0) return; isVideoMuted = !isVideoMuted; videoTracks.forEach(track => track.enabled = !isVideoMuted); const btn = document.getElementById('videoBtn'); if(isVideoMuted) { btn.classList.add('bg-red-500/30', 'text-red-400'); btn.innerHTML = '<i data-lucide="video-off"></i>'; } else { btn.classList.remove('bg-red-500/30', 'text-red-400'); btn.innerHTML = '<i data-lucide="video"></i>'; } if(window.lucide) lucide.createIcons(); };
 window.toggleRemoteAudio = function() { isRemoteMuted = !isRemoteMuted; document.getElementById('remoteVideo').muted = isRemoteMuted; document.getElementById('remoteAudio').muted = isRemoteMuted; const btn = document.getElementById('speakerBtn'); if(isRemoteMuted) { btn.classList.add('bg-red-500/30', 'text-red-400'); btn.innerHTML = '<i data-lucide="volume-x"></i>'; } else { btn.classList.remove('bg-red-500/30', 'text-red-400'); btn.innerHTML = '<i data-lucide="volume-2"></i>'; } if(window.lucide) lucide.createIcons(); };
 
+// Toggle screen share size (minimized/maximized)
+window.toggleScreenShareSize = function() {
+    const display = document.getElementById('screenShareDisplay');
+    if (!display) return;
+    
+    screenShareMinimized = !screenShareMinimized;
+    
+    if (screenShareMinimized) {
+        display.classList.add('minimized');
+    } else {
+        display.classList.remove('minimized');
+    }
+};
+
+// Start screen sharing - ПОЛНОСТЬЮ ПЕРЕРАБОТАНО
 window.startScreenShare = async function() {
+    if (!peerConnection) {
+        alert('Start a call first before sharing screen');
+        return;
+    }
+    
+    // Toggle off if already sharing
+    if (isScreenSharing) {
+        stopScreenShare();
+        return;
+    }
+    
     try {
-        screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' }, audio: true });
-        const videoTrack = screenStream.getVideoTracks()[0];
-        if (!originalVideoTrack && localStream) originalVideoTrack = localStream.getVideoTracks()[0];
-        if(peerConnection) { const videoSender = peerConnection.getSenders().find(s => s.track?.kind === 'video'); if(videoSender) await videoSender.replaceTrack(videoTrack); }
-        document.getElementById('localVideo').srcObject = screenStream;
-        videoTrack.onended = () => stopScreenShare();
-        const btn = document.getElementById('shareBtn'); btn.classList.add('bg-green-500'); btn.classList.remove('bg-primary'); btn.innerHTML = '<i data-lucide="monitor-off"></i>'; if(window.lucide) lucide.createIcons();
-    } catch(e) {}
+        console.log('🖥️ Requesting screen share...');
+        
+        // Запрашиваем демонстрацию экрана
+        screenStream = await navigator.mediaDevices.getDisplayMedia({ 
+            video: { 
+                cursor: 'always',
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+                frameRate: { ideal: 30 }
+            }, 
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true
+            }
+        });
+        
+        const screenVideoTrack = screenStream.getVideoTracks()[0];
+        const screenAudioTrack = screenStream.getAudioTracks()[0];
+        
+        if (!screenVideoTrack) {
+            console.error('❌ No video track in screen share');
+            return;
+        }
+        
+        isScreenSharing = true;
+        screenShareMinimized = false;
+        
+        console.log('🖥️ Got screen track:', screenVideoTrack.label);
+        
+        // Сохраняем оригинальный видео трек камеры
+        if (!originalVideoTrack && localStream) {
+            const camTrack = localStream.getVideoTracks()[0];
+            if (camTrack) {
+                originalVideoTrack = camTrack;
+                console.log('📷 Saved original camera track');
+            }
+        }
+        
+        // КЛЮЧЕВОЙ МОМЕНТ: Заменяем или добавляем видео трек
+        if (peerConnection) {
+            const senders = peerConnection.getSenders();
+            console.log('📡 Current senders:', senders.length);
+            
+            const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+            
+            if (videoSender) {
+                // Есть видео sender - заменяем трек
+                console.log('🔄 Replacing video track...');
+                await videoSender.replaceTrack(screenVideoTrack);
+                console.log('✅ Video track replaced successfully');
+            } else {
+                // Нет видео sender (был аудио звонок) - добавляем новый трек
+                console.log('➕ Adding new video track...');
+                peerConnection.addTrack(screenVideoTrack, screenStream);
+                console.log('✅ Video track added successfully');
+                
+                // Нужно renegotiation - создаём новый offer
+                console.log('🔄 Creating new offer for renegotiation...');
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                
+                // Отправляем новый offer через Firebase
+                const recipientId = activeChatId || (incomingCallData ? incomingCallData.callerId : null);
+                if (recipientId && currentUser) {
+                    await db.ref('calls/' + currentUser.id + '/offer').set({
+                        type: offer.type,
+                        sdp: offer.sdp
+                    });
+                    await db.ref('calls/' + currentUser.id + '/screenShare').set(true);
+                    console.log('📤 New offer sent for screen share');
+                }
+            }
+            
+            // Добавляем аудио трек демки если есть
+            if (screenAudioTrack) {
+                console.log('🔊 Adding screen audio track');
+                peerConnection.addTrack(screenAudioTrack, screenStream);
+            }
+        }
+        
+        // Показываем демку локально
+        const screenShareDisplay = document.getElementById('screenShareDisplay');
+        const screenShareVideo = document.getElementById('screenShareVideo');
+        const remoteVideoMini = document.getElementById('remoteVideoMini');
+        const remoteVideoSmall = document.getElementById('remoteVideoSmall');
+        
+        if (screenShareDisplay && screenShareVideo) {
+            screenShareVideo.srcObject = screenStream;
+            await screenShareVideo.play().catch(e => console.log('Screen video play error:', e));
+            screenShareDisplay.classList.remove('hidden', 'minimized');
+            console.log('🖥️ Screen share display visible');
+            
+            // Показываем собеседника в мини окне
+            if (remoteVideoMini && remoteVideoSmall && remoteStream) {
+                remoteVideoSmall.srcObject = remoteStream;
+                remoteVideoMini.classList.remove('hidden');
+            }
+        }
+        
+        // Обновляем локальное превью
+        const localVideo = document.getElementById('localVideo');
+        if (localVideo) {
+            localVideo.srcObject = screenStream;
+        }
+        
+        // Показываем индикатор
+        const indicator = document.getElementById('screenShareIndicator');
+        if (indicator) indicator.classList.remove('hidden');
+        
+        // Синхронизируем с Firebase чтобы собеседник знал
+        if (currentUser) {
+            db.ref('calls/' + currentUser.id + '/screenShare').set(true);
+        }
+        
+        // Когда пользователь останавливает через браузер
+        screenVideoTrack.onended = () => {
+            console.log('🖥️ Screen share ended by user');
+            stopScreenShare();
+        };
+        
+        // Обновляем кнопку
+        const btn = document.getElementById('shareBtn'); 
+        if (btn) {
+            btn.classList.add('bg-green-500', 'ring-2', 'ring-green-400'); 
+            btn.classList.remove('bg-primary'); 
+            btn.innerHTML = '<i data-lucide="monitor-off"></i>'; 
+        }
+        if(window.lucide) lucide.createIcons();
+        
+        console.log('✅ Screen share fully active and sent to peer');
+        
+    } catch(e) {
+        console.log('❌ Screen share error:', e.name, e.message);
+        isScreenSharing = false;
+        
+        if (e.name === 'NotAllowedError') {
+            console.log('User cancelled screen share');
+        }
+    }
 };
 
 function stopScreenShare() {
-    if (screenStream) { screenStream.getTracks().forEach(track => track.stop()); screenStream = null; }
-    if (originalVideoTrack && peerConnection) { const videoSender = peerConnection.getSenders().find(s => s.track?.kind === 'video'); if (videoSender) videoSender.replaceTrack(originalVideoTrack).catch(e => {}); }
-    if (localStream) document.getElementById('localVideo').srcObject = localStream;
-    const btn = document.getElementById('shareBtn'); btn.classList.remove('bg-green-500'); btn.classList.add('bg-primary'); btn.innerHTML = '<i data-lucide="monitor"></i>'; if(window.lucide) lucide.createIcons();
+    console.log('🛑 Stopping screen share...');
+    isScreenSharing = false;
+    screenShareMinimized = false;
+    
+    // Останавливаем все треки демки
+    if (screenStream) { 
+        screenStream.getTracks().forEach(track => {
+            track.stop();
+            console.log('🛑 Stopped track:', track.kind);
+        }); 
+        screenStream = null; 
+    }
+    
+    // Восстанавливаем камеру в peer connection
+    if (originalVideoTrack && peerConnection) { 
+        const videoSender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video'); 
+        if (videoSender) {
+            videoSender.replaceTrack(originalVideoTrack)
+                .then(() => console.log('✅ Camera restored in peer connection'))
+                .catch(e => console.log('Camera restore error:', e)); 
+        }
+    }
+    
+    // Восстанавливаем локальное превью
+    if (localStream) {
+        const localVideo = document.getElementById('localVideo');
+        if (localVideo) localVideo.srcObject = localStream;
+    }
+    
+    // Скрываем UI демки
+    const screenShareDisplay = document.getElementById('screenShareDisplay');
+    if (screenShareDisplay) {
+        screenShareDisplay.classList.add('hidden');
+        screenShareDisplay.classList.remove('minimized');
+    }
+    
+    const remoteVideoMini = document.getElementById('remoteVideoMini');
+    if (remoteVideoMini) remoteVideoMini.classList.add('hidden');
+    
+    const indicator = document.getElementById('screenShareIndicator');
+    if (indicator) indicator.classList.add('hidden');
+    
+    // Синхронизируем с Firebase
+    if (currentUser) {
+        db.ref('calls/' + currentUser.id + '/screenShare').set(false);
+    }
+    
+    // Обновляем кнопку
+    const btn = document.getElementById('shareBtn'); 
+    if (btn) {
+        btn.classList.remove('bg-green-500', 'ring-2', 'ring-green-400'); 
+        btn.classList.add('bg-primary'); 
+        btn.innerHTML = '<i data-lucide="monitor"></i>'; 
+    }
+    if(window.lucide) lucide.createIcons();
+    
+    console.log('✅ Screen share stopped');
 }
 
 window.endCall = function() {
@@ -1966,11 +2273,26 @@ window.endCall = function() {
     if(localStream) { localStream.getTracks().forEach(track => track.stop()); localStream = null; }
     if(peerConnection) { peerConnection.close(); peerConnection = null; }
     if(currentUser) { db.ref('calls/' + currentUser.id).remove(); if(activeChatId) db.ref('calls/' + activeChatId).update({ status: 'ended' }); if(incomingCallData?.callerId) db.ref('calls/' + incomingCallData.callerId).update({ status: 'ended' }); }
+    
+    // Reset state
     remoteStream = null; isMicMuted = false; isVideoMuted = false; isRemoteMuted = false; incomingCallData = null; originalVideoTrack = null;
+    isScreenSharing = false; screenShareMinimized = false;
+    
+    // Hide modals
     document.getElementById('callModal').classList.add('hidden'); document.getElementById('callModal').classList.remove('flex');
     document.getElementById('incomingCallModal').classList.add('hidden'); document.getElementById('incomingCallModal').classList.remove('flex');
+    
+    // Hide screen share display
+    const screenShareDisplay = document.getElementById('screenShareDisplay');
+    if (screenShareDisplay) { screenShareDisplay.classList.add('hidden'); screenShareDisplay.classList.remove('minimized'); }
+    const remoteVideoMini = document.getElementById('remoteVideoMini');
+    if (remoteVideoMini) remoteVideoMini.classList.add('hidden');
+    const screenShareIndicator = document.getElementById('screenShareIndicator');
+    if (screenShareIndicator) screenShareIndicator.classList.add('hidden');
+    
+    // Reset buttons
     ['micBtn', 'videoBtn', 'speakerBtn'].forEach(id => { const btn = document.getElementById(id); if(btn) btn.classList.remove('bg-red-500/30', 'text-red-400'); });
-    const shareBtn = document.getElementById('shareBtn'); if(shareBtn) { shareBtn.classList.remove('bg-green-500'); shareBtn.classList.add('bg-primary'); }
+    const shareBtn = document.getElementById('shareBtn'); if(shareBtn) { shareBtn.classList.remove('bg-green-500', 'ring-2', 'ring-green-400'); shareBtn.classList.add('bg-primary'); }
     if(window.lucide) lucide.createIcons();
 };
 
