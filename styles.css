@@ -851,6 +851,74 @@ body {
         inset 0 0 60px rgba(0, 0, 0, 0.3);
 }
 
+/* === SCREEN SHARE STYLES === */
+#screenShareDisplay {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#screenShareDisplay.minimized {
+    position: absolute;
+    top: auto !important;
+    bottom: 100px;
+    left: 20px;
+    right: auto !important;
+    width: 320px;
+    height: 180px;
+    border-radius: 16px;
+    border: 2px solid rgba(34, 197, 94, 0.5);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    z-index: 15;
+}
+
+#screenShareDisplay.minimized #screenShareVideo {
+    object-fit: cover;
+}
+
+#screenShareDisplay.minimized #screenShareLabel {
+    top: auto;
+    bottom: 8px;
+    left: 8px;
+    transform: none;
+    padding: 4px 10px;
+    font-size: 11px;
+}
+
+#screenShareDisplay.minimized #screenShareLabel span {
+    display: none;
+}
+
+#screenShareDisplay.minimized #screenShareLabel::after {
+    content: 'Click to expand';
+}
+
+#screenShareDisplay.minimized #remoteVideoMini {
+    display: none !important;
+}
+
+/* Screen share video quality */
+#screenShareVideo {
+    background: #000;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+}
+
+/* Hover effect on minimized screen share */
+#screenShareDisplay.minimized:hover {
+    transform: scale(1.02);
+    border-color: rgba(34, 197, 94, 0.8);
+}
+
+/* Remote video when receiving screen share */
+#remoteVideo {
+    transition: all 0.3s ease;
+}
+
+/* Indicator that you're receiving screen share */
+.receiving-screen-share #callAudioOnly {
+    display: none !important;
+}
+
 /* === GROUP BADGE === */
 .group-badge {
     background: linear-gradient(135deg, var(--theme-primary), var(--theme-secondary));
